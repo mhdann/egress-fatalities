@@ -1,0 +1,94 @@
+\documentclass[9pt]{extarticle}
+\usepackage[a4paper,margin=0.5in]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage{parskip}
+\usepackage{titlesec}
+
+\setlength{\parskip}{2pt}
+\titlespacing*{\section}{0pt}{4pt}{1pt}
+\titleformat{\section}{\normalfont\normalsize\bfseries\color{black!80}}{}{0pt}{}
+\setlist[enumerate]{leftmargin=1.3em,itemsep=0pt,topsep=1pt,parsep=1pt}
+\setlist[itemize]{leftmargin=1.2em,itemsep=0pt,topsep=1pt,parsep=1pt}
+\newcommand{\rr}{$\rightarrow$}
+\definecolor{good}{HTML}{1a7f37}
+\definecolor{bad}{HTML}{b42318}
+
+\begin{document}
+\pagestyle{empty}
+
+\begin{center}
+{\Large\bfseries Re-analysis of ``Egress Thresholds and Wildfire Fatalities''}\\[2pt]
+{\normalsize Fong et al., \emph{PNAS} 2025 \,\textbar\, doi:10.1073/pnas.2535081123 \,\textbar\, replication review}
+\end{center}
+\vspace{-4pt}
+{\footnotesize Data: 38 fire\,$\times$\,census-place records (SI \texttt{sd01.xlsx}). Numerator $=$ place-attributed (``Identified'') fatalities; denominator $=$ place population.}
+
+\section*{Issues found}
+\begin{enumerate}
+\item \textbf{The headline figure regresses a cumulative sum against its own sort key.} Figure~S1's
+y-axis \texttt{cum\_per\_fatal} is a \emph{reverse cumulative sum} of per-capita fatality rate, ordered by exits.
+  \begin{itemize}
+  \item \textbf{Monotonically decreasing by construction} (sum of non-negative increments): pinned at the grand total at fewest exits and \textbf{exactly 0} at most exits, so a negative slope is guaranteed regardless of the data --- it appears even under a permuted (null) relationship.
+  \item A piecewise \textbf{``breakpoint'' is nearly inevitable} for such a curve; the reported $\sim$6.3 exits / 66.6th pct merely marks where the right-skewed exit distribution concentrates.
+  \item Points are \textbf{not independent} (each is a running total of the others), so the reported SEs, $R^2$, and breakpoint CI are not interpretable.
+  \end{itemize}
+\item \textbf{Weighting is unstable.} Across weighting schemes the per-capita slope slides $\sim$2.5$\times$ (unweighted $R^2\!\approx\!0.09$ \rr\ population-weighted $R^2\!\approx\!0.19$ but slope \emph{halves}). OLS-on-a-ratio is the wrong model for noisy counts.
+\item \textbf{Six population denominators are wrong --- systematically.} For destructive older fires the listed population is the \emph{post-fire depopulated} census, not the at-risk population. \textbf{All six biased communities are low-exit ($\leq$6) and all are inflated}, pushing toward the paper's conclusion; two are the dataset's \#1/\#2 highest rates.
+
+\vspace{2pt}
+{\footnotesize
+\begin{tabular}{@{}lccr@{\,}c@{\,}rl@{}}
+\toprule
+Fire / place & exits & deaths & listed & \rr & corrected & rate inflation\\
+\midrule
+Camp / Paradise        & 6 & 66 & 7{,}730 & \rr & 26{,}800 & 3.5$\times$\\
+Camp / Concow          & 6 & 9  & 306     & \rr & 710      & 2.3$\times$\\
+Carr / Keswick         & 3 & 4  & 141     & \rr & 451      & 3.2$\times$\\
+Butte / Mountain Ranch & 2 & 2  & 256     & \rr & 1{,}628  & 6.4$\times$\\
+Mtn View / Walker      & 2 & 1  & 401     & \rr & 704      & 1.8$\times$\\
+Waldo Canyon / Manitou & 3 & 2  & 235     & \rr & 4{,}309  & $\geq$20$\times$ (misassigned$^\ast$)\\
+\bottomrule
+\end{tabular}}
+\\[2pt]
+{\footnotesize $^\ast$Manitou: the deaths occurred in the Mountain Shadows neighborhood of Colorado Springs, not Manitou Springs --- a geographic misassignment, not just a stale vintage.}
+\end{enumerate}
+
+\section*{Impact on the authors' interpretations}
+\begin{itemize}
+\item \textcolor{bad}{\textbf{``Threshold at $\sim$6 exits'' --- not supported.}} An artifact of the cumulative transform; a correct count model shows a \emph{smooth, constant-per-exit} decline with no kink.
+\item \textcolor{bad}{\textbf{Figure~S4 per-capita significance --- does not survive correction.}} \texttt{fatality\_pct\,$\sim$\,exits} on corrected denominators moves from \textbf{$p=0.036$ to $p=0.060$} (slope $-28\%$). The paper reported $p=0.048$.
+\item \textcolor{bad}{\textbf{Causal / policy reading --- unsupported.}} Observational; $\sim$35 communities; confounding (exits proxies small/remote/rural type; their Fig~S3 pop\,$\sim$\,exits $R^2=0.43$); selection on fatal events; fuzzy tiny-CDP denominators.
+\end{itemize}
+
+\section*{What does hold up (negative binomial + jackknife)}
+Counts modeled directly: \texttt{deaths\,$\sim$\,exits\,+\,offset(log pop)}, negative binomial (Poisson is badly overdispersed, Pearson $\varphi\!\approx\!16$, $\alpha\!\approx\!1.1$).
+
+\vspace{2pt}
+{\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+ & rate ratio / exit & effect & $p$\\
+\midrule
+Original populations  & 0.813 & $-18.7\%$ / exit & $<0.0001$\\
+\textbf{Corrected populations} & \textbf{0.837} & \textbf{$-16.3\%$ / exit} & \textbf{$<0.0001$}\\
+\bottomrule
+\end{tabular}}
+
+\begin{itemize}
+\item \textcolor{good}{\textbf{Direction is real and survives everything}} --- the cumulative-artifact fix, the six denominator corrections, and overdispersion (quasi-Poisson $p=0.0014$).
+\item \textcolor{good}{\textbf{Jackknife (leave-one-out) is rock-stable}}: coefficient range $-0.196$ to $-0.168$ across all 38 deletions; the most influential point is \emph{Altadena}, whose removal \emph{strengthens} the effect. No single community drives the result.
+\item The corrected OLS per-capita slope is LOO-stable but leans on un-benchmarkable tiny CDPs (Moskowite Corner 109, Igo 148, Ono 72) --- another reason to prefer the count model.
+\end{itemize}
+
+\section*{Verdict}
+\noindent\fbox{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule}{%
+\textbf{``Fewer egress roads $\rightarrow$ higher per-capita wildfire fatality'' is supported} --- modestly ($\sim$16\% per road), robustly, on corrected denominators. \textbf{The paper's specific claims --- a 6-exit \emph{threshold} and the Figure~S4 per-capita significance --- are not.} No causal or policy conclusion is warranted.}}
+
+\vspace{3pt}
+{\footnotesize Artifacts: idempotent corrections + corrected dataset in \texttt{data/fire-fatality-corrected.csv}. Census figures verified against U.S.\ Census 2010/2020 profiles and contemporaneous reporting.}
+
+\end{document}
