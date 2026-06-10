@@ -41,6 +41,7 @@ the specific *threshold* claim and the Fig S4 per-capita significance are not.
 | `study/docs/pnas.2535081123.sapp.pdf` | Authors' SI appendix |
 | `docs/figS4_popweighted.png` | Regenerated Fig S4 with a population-weighted regression |
 | `egress-fatalities-reanalysis.{md,pdf,tex}` | Our one-page re-analysis (source, PDF, Markdown) |
+| `egress-nb-reanalysis.ipynb` | Executable notebook: NB model, robustness suite (run with `.venv`, kernel "Python (egress-fatalities)") |
 
 ## Source
 
