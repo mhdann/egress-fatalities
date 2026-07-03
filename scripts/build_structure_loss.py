@@ -41,6 +41,26 @@ STRUCTURE_LOSS: list[tuple[str, int, int, str, str]] = [
      "https://www.fire.ca.gov/incidents/2020/8/16/czu-lightning-complex-including-warnella-fire"),
     ("CARR", 2018, 1614, "all structures destroyed (+279 damaged)",
      "https://www.fire.ca.gov/incidents/2018/7/23/carr-fire/"),
+    ("WOOLSEY", 2018, 1643, "all structures destroyed (~364 damaged), LA + Ventura",
+     "https://www.fire.ca.gov/our-impact/statistics (Top 20 Most Destructive)"),
+    ("VALLEY", 2015, 1955, "all structures destroyed",
+     "https://www.fire.ca.gov/our-impact/statistics (Top 20 Most Destructive)"),
+    ("NUNS", 2017, 1355, "all structures destroyed (merged Nuns complex)",
+     "https://www.fire.ca.gov/our-impact/statistics (Top 20 Most Destructive)"),
+    ("ATLAS", 2017, 781, "all structures destroyed (~120 damaged)",
+     "https://www.fire.ca.gov/our-impact/statistics (Top 20 Most Destructive)"),
+    ("THOMAS", 2017, 1063, "all structures destroyed (~280 damaged)",
+     "https://www.fire.ca.gov/our-impact/statistics (Top 20 Most Destructive)"),
+    ("REDWOOD VALLEY", 2017, 546, "all structures destroyed; CAL FIRE incident page "
+     "now shows 543 (+41 damaged)",
+     "https://www.fire.ca.gov/incidents/2017/10/8/redwood-valley-fire-mendocino-lake-complex"),
+    ("BUTTE", 2015, 965, "all structures destroyed (residential+commercial+other); "
+     "921 is the older homes/outbuildings tally",
+     "https://www.fire.ca.gov/incidents/2015/9/9/butte-fire/"),
+    ("ERSKINE", 2016, 309, "all structures destroyed (~257 homes)",
+     "https://en.wikipedia.org/wiki/Erskine_Fire (InciWeb; matched pre-2018 CAL FIRE Top 20)"),
+    ("CASCADE", 2017, 264, "all structures destroyed",
+     "https://krcrtv.com/news/local/cal-fire-report-sagging-pge-power-lines-caused-cascade-fire"),
 ]
 
 
