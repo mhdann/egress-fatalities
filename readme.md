@@ -37,6 +37,10 @@ the specific *threshold* claim and the Fig S4 per-capita significance are not.
 | `study/data/pnas.2535081123.sd01.xlsx` | Authors' source fatality workbook (richest, human-audited) |
 | `study/data/pnas.2535081123.sd02.csv` | Authors' CSV export consumed by their R scripts |
 | `data/fire-fatality-corrected.csv` | Our corrected denominators (idempotent) + corrected rates |
+| `data/fire-structures-destroyed.csv` | Hand-curated structures destroyed per fire, with source URL per row |
+| `data/place-age-distribution.csv` | Pre-fire population age structure per fire × census place, 10-year bins (ACS B01001) |
+| `data/fire-exposure.csv` | Everything merged: corrected fatality data + age bins + structures destroyed (NB exposure variables) |
+| `scripts/fetch_exposure_data.py` | Pulls the age data from the Census API and regenerates the two CSVs above |
 | `study/pnas.2535081123.sd03.r`, `sd04.txt`, `sd05.txt` | Authors' R scripts (regression + spatial pipeline) |
 | `study/docs/pnas.2535081123.sapp.pdf` | Authors' SI appendix |
 | `docs/figS4_popweighted.png` | Regenerated Fig S4 with a population-weighted regression |
