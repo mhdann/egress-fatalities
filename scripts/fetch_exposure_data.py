@@ -2,10 +2,10 @@
 """Pull pre-fire age-structure exposure data and merge all exposure variables per fire.
 
 For every fire x census-place row in data/fire-fatality-corrected.csv this script
-downloads the place's population age distribution from the Census Bureau API
-(ACS 5-year table B01001, sex by age) for the last ACS vintage that ended BEFORE
-the fire year, aggregates it into 10-year bins (0-9 ... 70-79, 80+; ACS tops out
-at 85+ so the last bin is open-ended), and writes:
+downloads the place's population age distribution from the Census Bureau (ACS 5-year
+table B01001, sex by age) for the last ACS vintage that ended BEFORE the fire year,
+aggregates it into 10-year bins (0-9 ... 70-79, 80+; ACS tops out at 85+ so the last
+bin is open-ended), and writes:
 
   data/place-age-distribution.csv   one row per fire x place: bin counts + shares,
                                     the ACS vintage used, and a post-fire flag
@@ -13,6 +13,11 @@ at 85+ so the last bin is open-ended), and writes:
                                     bins and with structures destroyed per fire
                                     (from the hand-curated, source-cited
                                     data/fire-structures-destroyed.csv)
+
+Data source. With CENSUS_API_KEY set, the official API (api.census.gov) is used —
+it has required a key since 2025. Without one, the script falls back to the keyless
+JSON endpoint behind data.census.gov (CEDSCI, `/api/access/data/table`), which
+serves the same published tables.
 
 Vintage selection. The target vintage is fire_year - 1, so the 5-year estimate
 window closes before the fire (e.g. CAMP 2018 -> ACS 2013-2017). Several census
@@ -23,13 +28,12 @@ place and sets pre_fire_geography = False so the caveat is explicit (for CAMP/
 Concow that means a post-fire, depopulated base — treat its *shares* as a proxy
 for the pre-fire shape, and keep using population_corrected as the level).
 
-Every place is resolved to a FIPS code by exact-name match against the API's own
-place list for that state and vintage, and every B01001 pull is checked
-(sum of the 18 sex x bin cells == the table's total) so a bad code or variable
-mapping fails loudly instead of producing wrong bins.
+Every place is resolved to a FIPS code by exact-name match against the full place
+list for that state and vintage, and every B01001 pull is checked (sum of the 18
+sex x bin cells == the table's total) so a bad code or variable mapping fails
+loudly instead of producing wrong bins.
 
-Requires outbound HTTPS to api.census.gov. No API key needed at this volume;
-set CENSUS_API_KEY to use one anyway. Run from the repo root:
+Run from the repo root:
 
   python scripts/fetch_exposure_data.py
 
@@ -52,13 +56,12 @@ STRUCTURES = ROOT / "data" / "fire-structures-destroyed.csv"
 OUT_AGES = ROOT / "data" / "place-age-distribution.csv"
 OUT_MERGED = ROOT / "data" / "fire-exposure.csv"
 
-API = "https://api.census.gov/data"
 KEY = os.environ.get("CENSUS_API_KEY", "")
 EARLIEST_ACS5 = 2009   # first ACS 5-year release
 LATEST_ACS5 = 2024     # newest release to consider (2020-2024, released Dec 2025)
 
 # census_place string in fire-fatality-corrected.csv -> (state FIPS, exact place
-# name as it appears in the Census API NAME field, minus the ", State" suffix).
+# name as it appears in the Census NAME field, minus the ", State" suffix).
 # Fixes the workbook's spelling quirks (Lahiaina, Silvarado, Weed City, Manitou).
 PLACE_CANON: dict[str, tuple[str, str]] = {
     "Lahiaina": ("15", "Lahaina CDP"),
@@ -111,21 +114,20 @@ BIN_VARS: dict[str, list[int]] = {
     "80p": [24, 25, 48, 49],               # 80-84, 85+
 }
 BIN_LABELS = list(BIN_VARS.keys())
-ALL_VARS = ["B01001_001E"] + [f"B01001_{i:03d}E" for ids in BIN_VARS.values() for i in ids]
+AGE_VARS = ["B01001_001E"] + [f"B01001_{i:03d}E" for ids in BIN_VARS.values() for i in ids]
 
 
-def get_json(url: str, params: dict, retries: int = 4) -> list | None:
-    """GET a Census API endpoint; None on 404 (dataset/geo not published), raise otherwise."""
-    if KEY:
-        params = {**params, "key": KEY}
+def get_json(url: str, params: dict, retries: int = 4):
+    """GET with retry/backoff; None on 404, raise on other hard failures."""
     for attempt in range(retries):
         try:
-            r = requests.get(url, params=params, timeout=60)
+            r = requests.get(url, params=params, timeout=120)
             if r.status_code == 404:
                 return None
             r.raise_for_status()
             return r.json()
-        except (requests.ConnectionError, requests.Timeout, requests.HTTPError) as e:
+        except (requests.ConnectionError, requests.Timeout, requests.HTTPError,
+                ValueError) as e:
             status = getattr(getattr(e, "response", None), "status_code", None)
             if status is not None and status < 500 and status != 429:
                 raise
@@ -135,51 +137,89 @@ def get_json(url: str, params: dict, retries: int = 4) -> list | None:
     return None
 
 
-class Acs:
-    """Thin ACS 5-year client with per-(vintage, state) place-list caching."""
+class OfficialApi:
+    """api.census.gov -- requires CENSUS_API_KEY (mandatory since 2025)."""
+
+    BASE = "https://api.census.gov/data"
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        self._places: dict[tuple[int, str], dict[str, str] | None] = {}
+
+    def place_list(self, vintage: int, state: str) -> dict[str, str] | None:
+        k = (vintage, state)
+        if k not in self._places:
+            data = get_json(f"{self.BASE}/{vintage}/acs/acs5",
+                            {"get": "NAME", "for": "place:*", "in": f"state:{state}",
+                             "key": self.key})
+            self._places[k] = None if data is None else {
+                name.rsplit(",", 1)[0].strip().lower(): fips
+                for name, _st, fips in data[1:]
+            }
+        return self._places[k]
+
+    def age_row(self, vintage: int, state: str, place_fips: str) -> dict[str, str] | None:
+        data = get_json(f"{self.BASE}/{vintage}/acs/acs5",
+                        {"get": ",".join(AGE_VARS), "for": f"place:{place_fips}",
+                         "in": f"state:{state}", "key": self.key})
+        if not data or len(data) < 2:
+            return None
+        return dict(zip(data[0], data[1]))
+
+
+class CedsciApi:
+    """Keyless JSON endpoint behind data.census.gov (serves the same ACS tables)."""
+
+    BASE = "https://data.census.gov/api/access/data/table"
 
     def __init__(self) -> None:
         self._places: dict[tuple[int, str], dict[str, str] | None] = {}
 
+    def _table(self, vintage: int, geo: str, table: str = "B01001") -> list | None:
+        try:
+            payload = get_json(self.BASE, {"id": f"ACSDT5Y{vintage}.{table}", "g": geo})
+        except requests.HTTPError:
+            return None  # unpublished vintage surfaces as a 4xx here
+        data = (payload or {}).get("response", {}).get("data")
+        return data if data and len(data) >= 2 else None
+
     def place_list(self, vintage: int, state: str) -> dict[str, str] | None:
-        """Map lower-cased place name (no ', State' suffix) -> place FIPS.
-        None if this vintage isn't published for ACS 5-year."""
         k = (vintage, state)
         if k not in self._places:
-            data = get_json(f"{API}/{vintage}/acs/acs5",
-                            {"get": "NAME", "for": "place:*", "in": f"state:{state}"})
+            # tiny one-variable table just to enumerate NAME + GEO_ID for every place
+            data = self._table(vintage, f"040XX00US{state}$1600000", table="B01003")
             if data is None:
                 self._places[k] = None
             else:
+                hdr = data[0]
                 names = {}
-                for name, _st, fips in data[1:]:
-                    names[name.rsplit(",", 1)[0].strip().lower()] = fips
+                for vals in data[1:]:
+                    row = dict(zip(hdr, vals))
+                    geoid = row["GEO_ID"]                      # 1600000US0655520
+                    fips = geoid.split("US")[1][len(state):]
+                    names[row["NAME"].rsplit(",", 1)[0].strip().lower()] = fips
                 self._places[k] = names
         return self._places[k]
 
-    def resolve(self, vintage: int, state: str, canon: str) -> str | None:
-        places = self.place_list(vintage, state)
-        if places is None:
-            return None
-        return places.get(canon.lower())
-
-    def age_bins(self, vintage: int, state: str, place_fips: str) -> dict[str, int]:
-        data = get_json(f"{API}/{vintage}/acs/acs5",
-                        {"get": ",".join(ALL_VARS), "for": f"place:{place_fips}",
-                         "in": f"state:{state}"})
-        if not data or len(data) < 2:
-            raise RuntimeError(f"no B01001 data for place {state}{place_fips} in ACS {vintage}")
-        row = dict(zip(data[0], data[1]))
-        total = int(row["B01001_001E"])
-        bins = {b: sum(int(row[f"B01001_{i:03d}E"]) for i in ids) for b, ids in BIN_VARS.items()}
-        if sum(bins.values()) != total:
-            raise RuntimeError(
-                f"bin sum {sum(bins.values())} != total {total} for {state}{place_fips} "
-                f"ACS {vintage} -- variable mapping is wrong, refusing to write bad data")
-        return {"total": total, **bins}
+    def age_row(self, vintage: int, state: str, place_fips: str) -> dict[str, str] | None:
+        data = self._table(vintage, f"160XX00US{state}{place_fips}")
+        return dict(zip(data[0], data[1])) if data else None
 
 
-def pick_vintage(acs: Acs, fire_year: int, state: str, canon: str) -> tuple[int, str]:
+def make_client():
+    if KEY:
+        print("using api.census.gov (CENSUS_API_KEY set)")
+        return OfficialApi(KEY)
+    print("no CENSUS_API_KEY -> using keyless data.census.gov endpoint")
+    return CedsciApi()
+
+
+def resolve(client, vintage: int, state: str, canon: str) -> str | None:
+    places = client.place_list(vintage, state)
+    return None if places is None else places.get(canon.lower())
+
+
+def pick_vintage(client, fire_year: int, state: str, canon: str) -> tuple[int, str]:
     """Choose the ACS vintage: fire_year-1 if the place exists there, else the
     nearest usable vintage (one step back for unreleased datasets, then forward
     for places that only exist in newer geography)."""
@@ -188,11 +228,24 @@ def pick_vintage(acs: Acs, fire_year: int, state: str, canon: str) -> tuple[int,
     for v in candidates:
         if v < EARLIEST_ACS5:
             continue
-        fips = acs.resolve(v, state, canon)
+        fips = resolve(client, v, state, canon)
         if fips is not None:
             return v, fips
     raise RuntimeError(f"could not find place '{canon}' (state {state}) in any ACS "
                        f"vintage {EARLIEST_ACS5}-{LATEST_ACS5}")
+
+
+def age_bins(client, vintage: int, state: str, place_fips: str) -> dict[str, int]:
+    row = client.age_row(vintage, state, place_fips)
+    if row is None:
+        raise RuntimeError(f"no B01001 data for place {state}{place_fips} in ACS {vintage}")
+    total = int(row["B01001_001E"])
+    bins = {b: sum(int(row[f"B01001_{i:03d}E"]) for i in ids) for b, ids in BIN_VARS.items()}
+    if sum(bins.values()) != total:
+        raise RuntimeError(
+            f"bin sum {sum(bins.values())} != total {total} for {state}{place_fips} "
+            f"ACS {vintage} -- variable mapping is wrong, refusing to write bad data")
+    return {"total": total, **bins}
 
 
 def main() -> None:
@@ -204,14 +257,14 @@ def main() -> None:
     if missing:
         sys.exit(f"no canonical place mapping for: {missing}")
 
-    acs = Acs()
+    client = make_client()
     rows = []
     for _, r in corr.iterrows():
         fire, place = r["Fire"], r["census_place"]
         fire_year = int(years[(fire, place)])
         state, canon = PLACE_CANON[place]
-        vintage, fips = pick_vintage(acs, fire_year, state, canon)
-        bins = acs.age_bins(vintage, state, fips)
+        vintage, fips = pick_vintage(client, fire_year, state, canon)
+        bins = age_bins(client, vintage, state, fips)
         total = bins.pop("total")
         pre_fire = vintage < fire_year
         rec = {
